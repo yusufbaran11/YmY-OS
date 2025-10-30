@@ -75,9 +75,28 @@ echo "📦 Paket listesi güncelleniyor..."
 apt-get update
 
 echo "🐧 Temel sistem paketleri kuruluyor..."
+# Önce systemd ve temel bağımlılıkları kur
+apt-get install -y \
+    systemd \
+    systemd-sysv \
+    udev \
+    dbus
+
+# Kernel'i ayrı ve dikkatli kur
+echo "🐧 Linux kernel kuruluyor..."
+apt-get install -y \
+    linux-image-generic \
+    linux-headers-generic
+
+# Kernel'in kurulduğunu doğrula
+if [ ! -f /boot/vmlinuz-* ]; then
+    echo "❌ Kernel kurulumu başarısız! Tekrar deneniyor..."
+    apt-get install -y --reinstall linux-image-generic
+fi
+
+# Diğer live sistem paketleri
+echo "📦 Live sistem paketleri kuruluyor..."
 apt-get install -y --no-install-recommends \
-    linux-generic \
-    linux-headers-generic \
     casper \
     lupin-casper \
     discover \
@@ -181,7 +200,28 @@ AutomaticLogin=live
 EOF
 
 echo "🔧 Initramfs güncelleniyor..."
+# Tüm kurulu kernel'ler için initramfs oluştur
 update-initramfs -c -k all
+
+# Boot klasörünü kontrol et
+echo "📂 Boot klasörü içeriği:"
+ls -lh /boot/
+
+# Kernel dosyalarının varlığını kontrol et
+KERNEL_COUNT=$(ls -1 /boot/vmlinuz-* 2>/dev/null | wc -l)
+INITRD_COUNT=$(ls -1 /boot/initrd.img-* 2>/dev/null | wc -l)
+
+echo "✅ Bulunan kernel sayısı: $KERNEL_COUNT"
+echo "✅ Bulunan initrd sayısı: $INITRD_COUNT"
+
+if [ "$KERNEL_COUNT" -eq 0 ]; then
+    echo "❌ KRİTİK: Kernel bulunamadı! Manuel kurulum deneniyor..."
+    # En son kernel versiyonunu bul ve kur
+    LATEST_KERNEL=$(apt-cache search linux-image-generic | grep '^linux-image-[0-9]' | sort -V | tail -n1 | awk '{print $1}')
+    echo "📥 Kurulmaya çalışılan kernel: $LATEST_KERNEL"
+    apt-get install -y --reinstall "$LATEST_KERNEL"
+    update-initramfs -c -k all
+fi
 
 echo "🧹 Temizlik yapılıyor..."
 apt-get clean
@@ -196,16 +236,23 @@ CHROOT_EOF
     
     echo "🔗 Sistem dizinleri bağlanıyor..."
     sudo mount --bind /dev "$BUILD_DIR/chroot/dev"
+    sudo mount --bind /dev/pts "$BUILD_DIR/chroot/dev/pts" 2>/dev/null || true
     sudo mount --bind /sys "$BUILD_DIR/chroot/sys"
     sudo mount --bind /proc "$BUILD_DIR/chroot/proc"
+    sudo mount --bind /run "$BUILD_DIR/chroot/run" 2>/dev/null || true
     
     echo "⚙️ Chroot içinde yapılandırma çalıştırılıyor..."
     sudo chroot "$BUILD_DIR/chroot" /tmp/chroot_config.sh
     
     echo "🔓 Sistem dizinleri ayrılıyor..."
+    sudo umount "$BUILD_DIR/chroot/run" 2>/dev/null || true
+    sudo umount "$BUILD_DIR/chroot/dev/pts" 2>/dev/null || true
     sudo umount "$BUILD_DIR/chroot/dev" || true
     sudo umount "$BUILD_DIR/chroot/sys" || true
     sudo umount "$BUILD_DIR/chroot/proc" || true
+    
+    echo "🔍 Chroot dışından kernel kontrolü..."
+    sudo ls -lh "$BUILD_DIR/chroot/boot/"
 }
 
 # ISO imajını oluştur
