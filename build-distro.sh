@@ -21,6 +21,7 @@ install_tools() {
         debootstrap \
         squashfs-tools \
         xorriso \
+        isolinux \
         syslinux-utils \
         grub-pc-bin \
         grub-efi-amd64-bin \
@@ -305,8 +306,23 @@ create_iso() {
 EOF
     
     echo "💾 Bootloader dosyaları kopyalanıyor..."
-    sudo cp /usr/lib/syslinux/modules/bios/isolinux.bin "$BUILD_DIR/image/isolinux/"
-    sudo cp /usr/lib/syslinux/modules/bios/vesamenu.c32 "$BUILD_DIR/image/isolinux/"
+    # Syslinux dosyalarının konumunu bul
+    ISOLINUX_BIN=$(find /usr/lib -name isolinux.bin 2>/dev/null | head -n 1)
+    VESAMENU_C32=$(find /usr/lib -name vesamenu.c32 2>/dev/null | head -n 1)
+    ISOHDPFX_BIN=$(find /usr/lib -name isohdpfx.bin 2>/dev/null | head -n 1)
+    
+    if [ -z "$ISOLINUX_BIN" ]; then
+        echo "❌ isolinux.bin bulunamadı! İzolasyonlu kurulum yapılıyor..."
+        sudo apt-get install -y isolinux
+        ISOLINUX_BIN=$(find /usr/lib -name isolinux.bin 2>/dev/null | head -n 1)
+    fi
+    
+    echo "✅ isolinux.bin: $ISOLINUX_BIN"
+    echo "✅ vesamenu.c32: $VESAMENU_C32"
+    echo "✅ isohdpfx.bin: $ISOHDPFX_BIN"
+    
+    sudo cp "$ISOLINUX_BIN" "$BUILD_DIR/image/isolinux/"
+    sudo cp "$VESAMENU_C32" "$BUILD_DIR/image/isolinux/"
     
     echo "⚙️ ISOLINUX yapılandırılıyor..."
     cat > "$BUILD_DIR/image/isolinux/isolinux.cfg" << EOF
@@ -361,7 +377,7 @@ EOF
         -eltorito-boot isolinux/isolinux.bin \
         -eltorito-catalog isolinux/boot.cat \
         -no-emul-boot -boot-load-size 4 -boot-info-table \
-        -isohybrid-mbr /usr/lib/syslinux/mbr/isohdpfx.bin \
+        -isohybrid-mbr "$ISOHDPFX_BIN" \
         -eltorito-alt-boot \
         -e boot/grub/efi.img \
         -no-emul-boot -isohybrid-gpt-basdat \
