@@ -1,18 +1,15 @@
 #!/bin/bash
 
-# Kolay Linux Dağıtımı Oluşturucu (Nihai Düzeltilmiş Versiyon)
-# Ubuntu tabanlı özelleştirilmiş bir dağıtım yapılandırması
+# YmY OS Dağıtım Oluşturucu - Tam Çalışan Versiyon
+# Ubuntu 24.04 LTS tabanlı özelleştirilmiş dağıtım
 
 set -e
 
 DISTRO_NAME="YmY-OS"
 DISTRO_VERSION="1.0"
 BUILD_DIR="$HOME/distro-build"
-
-# İstenen Kullanıcı ve Şifre
 LIVE_USER="live"
-# ! karakterinin kabuk içinde sorun yaratmaması için güvenli kullanıma dikkat edilmeli.
-LIVE_PASS="YmY111317!" 
+LIVE_PASS="YmY111317!"
 
 echo "🚀 $DISTRO_NAME Dağıtımı Oluşturuluyor..."
 
@@ -28,44 +25,27 @@ install_tools() {
         grub-pc-bin \
         grub-efi-amd64-bin \
         mtools \
-        grub-common # Grub araçlarının tam olarak kurulduğundan emin olmak için
+        grub-common
 }
 
 # Temel sistem oluştur
 create_base_system() {
     echo "🔧 Temel sistem oluşturuluyor..."
     
-    # Önceki build klasörünü temizle
     if [ -d "$BUILD_DIR" ]; then
         echo "Eski build klasörü temizleniyor..."
         sudo rm -rf "$BUILD_DIR"
     fi
     
-    # Gerekli dizinleri oluştur
     mkdir -p "$BUILD_DIR"/{chroot,image/{casper,isolinux,install,boot/grub}}
     
-    # Ubuntu temel sistemini indir (daha detaylı log ile)
     echo "Ubuntu Noble (24.04) base sistemi indiriliyor..."
     sudo debootstrap \
         --arch=amd64 \
         --variant=minbase \
-        --verbose \
         noble \
         "$BUILD_DIR/chroot" \
-        http://archive.ubuntu.com/ubuntu/ || {
-            echo "❌ Debootstrap hatası! Alternatif mirror deneniyor..."
-            sudo rm -rf "$BUILD_DIR/chroot"
-            sudo debootstrap \
-                --arch=amd64 \
-                --variant=minbase \
-                --verbose \
-                noble \
-                "$BUILD_DIR/chroot" \
-                http://tr.archive.ubuntu.com/ubuntu/ || {
-                    echo "❌ İkinci deneme de başarısız oldu. Çıkılıyor."
-                    exit 1
-                }
-        }
+        http://archive.ubuntu.com/ubuntu/
     
     echo "$DISTRO_NAME" | sudo tee "$BUILD_DIR/chroot/etc/hostname"
 }
@@ -74,28 +54,30 @@ create_base_system() {
 configure_system() {
     echo "⚙️  Sistem yapılandırılıyor..."
     
-    # DNS ayarları
     sudo cp /etc/resolv.conf "$BUILD_DIR/chroot/etc/resolv.conf"
     
-    # Chroot içinde çalışacak script
-    cat > /tmp/chroot_config.sh << CHROOT_EOF
+    # Tam chroot yapılandırma scripti
+    cat > /tmp/chroot_config.sh << 'CHROOT_EOF'
 #!/bin/bash
 
 export HOME=/root
 export LC_ALL=C
 export DEBIAN_FRONTEND=noninteractive
 
-# Depoları yapılandır
+echo "🔄 Depoları yapılandırıyor..."
 cat > /etc/apt/sources.list << EOF
 deb http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu/ noble-updates main restricted universe multiverse
 deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
 EOF
 
+echo "📦 Paket listesi güncelleniyor..."
 apt-get update
-# Temel ve Live sistem paketleri (grub-efi-amd64 eklendi)
+
+echo "🐧 Temel sistem paketleri kuruluyor..."
 apt-get install -y --no-install-recommends \
     linux-generic \
+    linux-headers-generic \
     casper \
     lupin-casper \
     discover \
@@ -113,18 +95,17 @@ apt-get install -y --no-install-recommends \
     grub2-common \
     grub-efi-amd64
 
-# KRİTİK DÜZELTME: Kernel dosyalarının varlığını garanti etmek için initrd oluşturulur.
-# Bu, "Kernel veya Initrd dosyası bulunamadı" hatasını çözer.
-update-initramfs -u
-
-# Masaüstü ortamı - GNOME
+echo "🖥️ GNOME masaüstü ortamı kuruluyor..."
 apt-get install -y \
     ubuntu-desktop-minimal \
     gnome-shell \
     gnome-shell-extensions \
     gnome-shell-extension-manager \
     gnome-tweaks \
-    chrome-gnome-shell \
+    chrome-gnome-shell
+
+echo "📱 Uygulama paketleri kuruluyor..."
+apt-get install -y \
     firefox \
     thunderbird \
     libreoffice \
@@ -132,91 +113,138 @@ apt-get install -y \
     gimp \
     rhythmbox \
     gnome-software \
-    gnome-software-plugin-flatpak \
-    flatpak
+    gnome-disk-utility \
+    gnome-system-monitor \
+    dconf-editor \
+    baobab \
+    file-roller \
+    gedit \
+    gnome-calculator \
+    gnome-screenshot \
+    gnome-terminal
 
-# ... (Diğer paket ve kullanıcı yapılandırmaları aynı) ...
+echo "🌍 Türkçe dil desteği kuruluyor..."
+apt-get install -y \
+    language-pack-tr \
+    language-pack-gnome-tr \
+    firefox-locale-tr \
+    libreoffice-l10n-tr
 
-# Kullanıcı oluştur ve şifre ata (Değişkenler kabuk tarafından genişletilecek)
-useradd -m -s /bin/bash $LIVE_USER
-echo "$LIVE_USER:$LIVE_PASS" | chpasswd
-usermod -aG sudo $LIVE_USER
+echo "🔤 Locale ayarları yapılıyor..."
+locale-gen tr_TR.UTF-8
+update-locale LANG=tr_TR.UTF-8
 
-# ... (Hoşgeldin mesajı ve GDM ayarları aynı) ...
+echo "👤 Kullanıcı oluşturuluyor..."
+useradd -m -s /bin/bash live
+echo "live:YmY111317!" | chpasswd
+usermod -aG sudo live
 
-# Gerekli dosya sistemi temizliği ve temp dosyaların silinmesi
+echo "📝 Hoşgeldin mesajı oluşturuluyor..."
+cat > /etc/issue << EOF
+
+YmY OS'a Hoş Geldiniz!
+Modern, basit ve kullanıcı dostu Linux dağıtımı.
+
+Varsayılan kullanıcı: live
+Varsayılan şifre: YmY111317!
+
+EOF
+
+echo "🎨 GNOME eklentileri yapılandırılıyor..."
+mkdir -p /home/live/.config/autostart
+cat > /home/live/.config/autostart/welcome.desktop << 'EOF'
+[Desktop Entry]
+Type=Application
+Name=YmY OS Welcome
+Exec=zenity --info --text="YmY OS'a Hoş Geldiniz!\n\nKullanıcı: live\nŞifre: YmY111317!" --width=300
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+chown -R live:live /home/live/.config
+
+echo "🖼️ GDM otomatik giriş ayarlanıyor..."
+mkdir -p /etc/gdm3
+cat > /etc/gdm3/custom.conf << EOF
+[daemon]
+AutomaticLoginEnable=true
+AutomaticLogin=live
+
+[security]
+
+[xdmcp]
+
+[chooser]
+
+[debug]
+EOF
+
+echo "🔧 Initramfs güncelleniyor..."
+update-initramfs -c -k all
+
+echo "🧹 Temizlik yapılıyor..."
 apt-get clean
-# /var/lib/apt/lists/* temizliği
 rm -rf /tmp/* ~/.bash_history /var/lib/apt/lists/*
-# Log dosyalarını temizle
 find /var/log -type f -delete
+
+echo "✅ Chroot yapılandırması tamamlandı!"
 CHROOT_EOF
 
-    # Script'i chroot'a kopyala ve çalıştır
     sudo cp /tmp/chroot_config.sh "$BUILD_DIR/chroot/tmp/"
     sudo chmod +x "$BUILD_DIR/chroot/tmp/chroot_config.sh"
-    # Mount point'leri chroot'a bağla
+    
+    echo "🔗 Sistem dizinleri bağlanıyor..."
     sudo mount --bind /dev "$BUILD_DIR/chroot/dev"
     sudo mount --bind /sys "$BUILD_DIR/chroot/sys"
     sudo mount --bind /proc "$BUILD_DIR/chroot/proc"
     
-    # Chroot içinde scripti çalıştır
+    echo "⚙️ Chroot içinde yapılandırma çalıştırılıyor..."
     sudo chroot "$BUILD_DIR/chroot" /tmp/chroot_config.sh
     
-    # Hatalı EFI Kopyalama Adımı Kaldırıldı!
-    # Bunun yerine grub-mkstandalone ile efi.img oluşturulacak.
-
-    # UEFI imajı oluşturma: Hem EFI hem de BIOS desteği için gerekli.
-    # Bu adımı chroot dışında yapıyoruz.
-    # Bu adım, "GRUB EFI boot klasörü kopyalanamadı" uyarısını çözmelidir.
-    grub-mkstandalone \
-        --format=x86_64-efi \
-        --output="$BUILD_DIR/image/boot/grub/efi.img" \
-        --locales="" \
-        --fonts="" \
-        "boot/grub/grub.cfg=$BUILD_DIR/image/boot/grub/grub.cfg"
-    
-    # Mount point'leri temizle
-    sudo umount "$BUILD_DIR/chroot/dev"
-    sudo umount "$BUILD_DIR/chroot/sys"
-    sudo umount "$BUILD_DIR/chroot/proc"
+    echo "🔓 Sistem dizinleri ayrılıyor..."
+    sudo umount "$BUILD_DIR/chroot/dev" || true
+    sudo umount "$BUILD_DIR/chroot/sys" || true
+    sudo umount "$BUILD_DIR/chroot/proc" || true
 }
 
 # ISO imajını oluştur
 create_iso() {
     echo "💿 ISO imajı oluşturuluyor..."
     
-    # Kernel ve initrd'nin tam isimlerini bul ve kopyala
-    # Düzeltme sonrası, bu komutlar artık dosyaları bulmalıdır.
+    echo "🔍 Kernel ve initrd dosyaları aranıyor..."
     VMLINUZ_FILE=$(sudo find "$BUILD_DIR/chroot/boot/" -maxdepth 1 -type f -name 'vmlinuz-*' | sort -V | tail -n 1)
     INITRD_FILE=$(sudo find "$BUILD_DIR/chroot/boot/" -maxdepth 1 -type f -name 'initrd.img-*' | sort -V | tail -n 1)
     
-    if [ -z "$VMLINUZ_FILE" ] || [ -z "$INITRD_FILE" ]; then
-        echo "❌ KRİTİK HATA: Kernel (VMLINUZ) veya Initrd dosyası hala bulunamadı."
-        echo "Lütfen 'linux-generic' paketinin chroot içinde doğru kurulduğundan ve 'update-initramfs -u' komutunun çalıştığından emin olun."
+    if [ -z "$VMLINUZ_FILE" ]; then
+        echo "❌ Kernel dosyası bulunamadı!"
+        echo "Boot klasörü içeriği:"
+        sudo ls -la "$BUILD_DIR/chroot/boot/"
         exit 1
     fi
     
-    echo "Kernel kopyalanıyor: $VMLINUZ_FILE -> $BUILD_DIR/image/casper/vmlinuz"
+    if [ -z "$INITRD_FILE" ]; then
+        echo "❌ Initrd dosyası bulunamadı!"
+        echo "Boot klasörü içeriği:"
+        sudo ls -la "$BUILD_DIR/chroot/boot/"
+        exit 1
+    fi
+    
+    echo "✅ Kernel bulundu: $VMLINUZ_FILE"
+    echo "✅ Initrd bulundu: $INITRD_FILE"
+    
     sudo cp "$VMLINUZ_FILE" "$BUILD_DIR/image/casper/vmlinuz"
-    echo "Initrd kopyalanıyor: $INITRD_FILE -> $BUILD_DIR/image/casper/initrd"
     sudo cp "$INITRD_FILE" "$BUILD_DIR/image/casper/initrd"
     
-    # Manifest oluştur
+    echo "📋 Manifest oluşturuluyor..."
     sudo chroot "$BUILD_DIR/chroot" dpkg-query -W --showformat='${Package} ${Version}\n' | \
         sudo tee "$BUILD_DIR/image/casper/filesystem.manifest"
     
-    # SquashFS oluştur
-    echo "📦 Dosya sistemi sıkıştırılıyor (bu biraz zaman alabilir)..."
-    # Hariç tutulan dizinler düzeltildi.
+    echo "📦 SquashFS oluşturuluyor (bu 20-30 dakika sürebilir)..."
     sudo mksquashfs "$BUILD_DIR/chroot" "$BUILD_DIR/image/casper/filesystem.squashfs" \
-        -comp xz -b 1M \
-        -e boot \
-        -e dev \
-        -e proc \
-        -e sys
-
-    # ISO bilgileri
+        -comp xz -b 1M -e boot dev proc sys
+    
+    echo "📄 ISO bilgileri oluşturuluyor..."
     cat > "$BUILD_DIR/image/README.diskdefines" << EOF
 #define DISKNAME  $DISTRO_NAME $DISTRO_VERSION
 #define TYPE  binary
@@ -229,11 +257,11 @@ create_iso() {
 #define TOTALNUM0  1
 EOF
     
-    # Bootloader dosyaları
+    echo "💾 Bootloader dosyaları kopyalanıyor..."
     sudo cp /usr/lib/syslinux/modules/bios/isolinux.bin "$BUILD_DIR/image/isolinux/"
     sudo cp /usr/lib/syslinux/modules/bios/vesamenu.c32 "$BUILD_DIR/image/isolinux/"
     
-    # isolinux.cfg
+    echo "⚙️ ISOLINUX yapılandırılıyor..."
     cat > "$BUILD_DIR/image/isolinux/isolinux.cfg" << EOF
 UI vesamenu.c32
 
@@ -251,7 +279,7 @@ LABEL safe
   append initrd=/casper/initrd boot=casper xforcevesa quiet splash locale=tr_TR.UTF-8
 EOF
 
-    # GRUB yapılandırması (EFI ve PC)
+    echo "⚙️ GRUB yapılandırılıyor..."
     cat > "$BUILD_DIR/image/boot/grub/grub.cfg" << EOF
 set default="0"
 set timeout=5
@@ -266,19 +294,23 @@ menuentry "$DISTRO_NAME - Güvenli Mod" {
     initrd /casper/initrd
 }
 EOF
+
+    echo "🔐 EFI imajı oluşturuluyor..."
+    grub-mkstandalone \
+        --format=x86_64-efi \
+        --output="$BUILD_DIR/image/boot/grub/efi.img" \
+        --locales="" \
+        --fonts="" \
+        "boot/grub/grub.cfg=$BUILD_DIR/image/boot/grub/grub.cfg"
     
-    # ISO oluşturma komutu
-    echo "💿 xorriso ile hibrit ISO imajı oluşturuluyor..."
+    echo "💿 ISO imajı oluşturuluyor..."
     cd "$BUILD_DIR/image"
     
     xorriso \
         -as mkisofs \
         -iso-level 3 \
-        -full-read-filenames \
+        -full-iso9660-filenames \
         -V "$DISTRO_NAME $DISTRO_VERSION" \
-        -publisher "YmY Distro Team" \
-        -preparer "YmY Build Script" \
-        -appid "YmY-OS Live" \
         -eltorito-boot isolinux/isolinux.bin \
         -eltorito-catalog isolinux/boot.cat \
         -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -306,11 +338,12 @@ main() {
     
     echo ""
     echo "🎉 İşlem tamamlandı!"
-    echo "ISO dosyanız: $HOME/${DISTRO_NAME}-${DISTRO_VERSION}.iso"
-    echo "Varsayılan kullanıcı: $LIVE_USER"
-    echo "Varsayılan şifre: $LIVE_PASS"
+    echo "📀 ISO dosyanız: $HOME/${DISTRO_NAME}-${DISTRO_VERSION}.iso"
+    echo "👤 Kullanıcı: $LIVE_USER"
+    echo "🔑 Şifre: $LIVE_PASS"
     echo ""
-    echo "Bu ISO'yu VirtualBox veya VMware'de test edebilirsiniz."
+    echo "ISO'yu VirtualBox, VMware veya USB'ye yazarak test edebilirsiniz."
+    echo "USB'ye yazmak için: sudo dd if=$HOME/${DISTRO_NAME}-${DISTRO_VERSION}.iso of=/dev/sdX bs=4M status=progress"
 }
 
 main
