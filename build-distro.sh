@@ -122,7 +122,13 @@ apt-get install -y \
     gnome-shell-extensions \
     gnome-shell-extension-manager \
     gnome-tweaks \
-    chrome-gnome-shell
+    chrome-gnome-shell \
+    plymouth \
+    plymouth-themes
+
+# Plymouth (boot animasyonu) ayarları
+update-alternatives --install /usr/share/plymouth/themes/default.plymouth default.plymouth /usr/share/plymouth/themes/spinner/spinner.plymouth 100
+update-alternatives --set default.plymouth /usr/share/plymouth/themes/spinner/spinner.plymouth
 
 echo "📱 Uygulama paketleri kuruluyor..."
 apt-get install -y \
@@ -260,6 +266,15 @@ CHROOT_EOF
 create_iso() {
     echo "💿 ISO imajı oluşturuluyor..."
     
+    # Özel logo varsa kopyala
+    if [ -f "/workspaces/YmY-OS/ymy-logo.png" ]; then
+        echo "🎨 Özel logo kopyalanıyor..."
+        sudo cp /workspaces/YmY-OS/ymy-logo.png "$BUILD_DIR/chroot/usr/share/plymouth/themes/spinner/watermark.png"
+        # GRUB için de kopyala
+        sudo mkdir -p "$BUILD_DIR/image/boot/grub/themes"
+        sudo cp /workspaces/YmY-OS/ymy-logo.png "$BUILD_DIR/image/boot/grub/themes/background.png"
+    fi
+    
     echo "🔍 Kernel ve initrd dosyaları aranıyor..."
     VMLINUZ_FILE=$(sudo find "$BUILD_DIR/chroot/boot/" -maxdepth 1 -type f -name 'vmlinuz-*' | sort -V | tail -n 1)
     INITRD_FILE=$(sudo find "$BUILD_DIR/chroot/boot/" -maxdepth 1 -type f -name 'initrd.img-*' | sort -V | tail -n 1)
@@ -332,31 +347,70 @@ MENU TITLE $DISTRO_NAME Live
 DEFAULT live
 
 LABEL live
-  menu label ^$DISTRO_NAME - Canlı Sistem
+  menu label ^$DISTRO_NAME - Canli Sistem
   kernel /casper/vmlinuz
   append initrd=/casper/initrd boot=casper quiet splash locale=tr_TR.UTF-8
 
 LABEL safe
-  menu label ^$DISTRO_NAME - Güvenli Mod
+  menu label ^$DISTRO_NAME - Guvenli Mod
   kernel /casper/vmlinuz
   append initrd=/casper/initrd boot=casper xforcevesa quiet splash locale=tr_TR.UTF-8
+
+LABEL check
+  menu label ^Bellek Testi
+  kernel /casper/vmlinuz
+  append initrd=/casper/initrd boot=casper integrity-check quiet splash
 EOF
 
     echo "⚙️ GRUB yapılandırılıyor..."
-    cat > "$BUILD_DIR/image/boot/grub/grub.cfg" << EOF
+    
+    # GRUB tema dizini oluştur
+    sudo mkdir -p "$BUILD_DIR/image/boot/grub/themes"
+    
+    # Logo varsa GRUB'a ekle
+    if [ -f "$BUILD_DIR/image/boot/grub/themes/background.png" ]; then
+        cat > "$BUILD_DIR/image/boot/grub/grub.cfg" << EOF
 set default="0"
 set timeout=5
 
-menuentry "$DISTRO_NAME - Canlı Sistem" {
-    linux /casper/vmlinuz boot=casper quiet splash locale=tr_TR.UTF-8
+# Arka plan resmi
+insmod png
+background_image /boot/grub/themes/background.png
+
+menuentry "$DISTRO_NAME - Canli Sistem" {
+    linux /casper/vmlinuz boot=casper quiet splash locale=tr_TR.UTF-8 ---
     initrd /casper/initrd
 }
 
-menuentry "$DISTRO_NAME - Güvenli Mod" {
-    linux /casper/vmlinuz boot=casper xforcevesa quiet splash locale=tr_TR.UTF-8
+menuentry "$DISTRO_NAME - Guvenli Mod" {
+    linux /casper/vmlinuz boot=casper nomodeset quiet splash locale=tr_TR.UTF-8 ---
     initrd /casper/initrd
 }
+
+menuentry "Bellek Testi (memtest86+)" {
+    linux16 /boot/memtest86+x64.bin
+}
 EOF
+    else
+        cat > "$BUILD_DIR/image/boot/grub/grub.cfg" << EOF
+set default="0"
+set timeout=5
+
+menuentry "$DISTRO_NAME - Canli Sistem" {
+    linux /casper/vmlinuz boot=casper quiet splash locale=tr_TR.UTF-8 ---
+    initrd /casper/initrd
+}
+
+menuentry "$DISTRO_NAME - Guvenli Mod" {
+    linux /casper/vmlinuz boot=casper nomodeset quiet splash locale=tr_TR.UTF-8 ---
+    initrd /casper/initrd
+}
+
+menuentry "Bellek Testi (memtest86+)" {
+    linux16 /boot/memtest86+x64.bin
+}
+EOF
+    fi
 
     echo "🔐 EFI imajı oluşturuluyor..."
     grub-mkstandalone \
